@@ -1,0 +1,130 @@
+name: AppSec Pipeline
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  secrets:
+    name: Secret Scanning (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: true
+          GITLEAKS_ENABLE_SUMMARY: true
+
+  sast:
+    name: SAST (Semgrep)
+    needs: secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Run Semgrep
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: >-
+            p/javascript
+            p/typescript
+            p/nodejs
+            p/python
+            p/owasp-top-ten
+            p/security-audit
+          generateSarif: "1"
+
+      - name: Upload Semgrep SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+        if: always() && hashFiles('semgrep.sarif') != ''
+        continue-on-error: true
+
+  image:
+    name: Image Scan (Syft + Trivy)
+    needs: secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v5
+        with:
+          context: api
+          file: api/Dockerfile
+          load: true
+          tags: cbrsecurity:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate SBOM (Syft)
+        uses: anchore/sbom-action@v0
+        with:
+          image: cbrsecurity:ci
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Scan with Trivy
+        uses: aquasecurity/trivy-action@38b337fff0a2f984d5be173c99e3f633438167ec
+        with:
+          scan-type: image
+          image-ref: cbrsecurity:ci
+          format: sarif
+          output: trivy.sarif
+          severity: HIGH,CRITICAL
+          exit-code: 1
+          ignore-unfixed: true
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif
+        if: always() && hashFiles('trivy.sarif') != ''
+        continue-on-error: true
+
+  dast:
+    name: DAST (Nuclei + Dastardly) — PROD
+    needs: secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Run Nuclei
+        uses: projectdiscovery/nuclei-action@main
+        with:
+          target: https://cbrsecurity.org
+          flags: "-severity high,critical -rate-limit 30 -timeout 10 -json -o nuclei.json"
+
+      - name: Run Dastardly
+        uses: portswigger/dastardly-action@main
+        with:
+          target_url: https://cbrsecurity.org
+
+      - name: Upload DAST SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: dast.sarif
+        if: always() && hashFiles('dast.sarif') != ''
+        continue-on-error: true

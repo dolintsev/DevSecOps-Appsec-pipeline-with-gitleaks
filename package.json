@@ -1,0 +1,12 @@
+{
+  "name": "banana-clicker",
+  "version": "1.0.0",
+  "description": "Intentionally lightly vulnerable Banana Clicker for AppSec pipeline practice",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

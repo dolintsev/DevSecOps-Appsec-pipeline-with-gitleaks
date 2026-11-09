@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Banana Clicker</title>
+  <style>
+    body { font-family: system-ui, sans-serif; text-align: center; background: #fff8e1; margin: 0; padding: 2rem; }
+    #banana { font-size: 8rem; cursor: pointer; user-select: none; transition: transform 0.1s; }
+    #banana:active { transform: scale(0.95); }
+    #score { font-size: 2.5rem; margin: 1rem 0; }
+    .panel { margin-top: 2rem; }
+    input, button { padding: 0.5rem 1rem; font-size: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Banana Clicker</h1>
+  <div id="banana" onclick="clickBanana()">🍌</div>
+  <div id="score">Bananas: <span id="count">0</span></div>
+
+  <div class="panel">
+    <input id="username" placeholder="Your name" />
+    <button onclick="saveName()">Save</button>
+    <p id="greeting"></p>
+  </div>
+
+  <div class="panel">
+    <a href="/debug">Debug info</a>
+  </div>
+
+  <script>
+    let bananas = Number(localStorage.getItem('bananas') || 0);
+    document.getElementById('count').textContent = bananas;
+
+    function clickBanana() {
+      bananas++;
+      localStorage.setItem('bananas', bananas);
+      document.getElementById('count').textContent = bananas;
+    }
+
+    function saveName() {
+      const name = document.getElementById('username').value;
+      // Intentionally vulnerable: unsanitized innerHTML → XSS
+      document.getElementById('greeting').innerHTML = 'Hello, ' + name + '!';
+      localStorage.setItem('username', name);
+    }
+
+    // Restore name
+    const saved = localStorage.getItem('username');
+    if (saved) {
+      document.getElementById('username').value = saved;
+      document.getElementById('greeting').innerHTML = 'Hello, ' + saved + '!';
+    }
+  </script>
+</body>
+</html>
